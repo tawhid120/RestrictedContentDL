@@ -6,6 +6,9 @@ import shutil
 import psutil
 import asyncio
 from time import time
+import threading
+from fastapi import FastAPI
+import uvicorn
 
 from pyleaves import Leaves
 from pyrogram.enums import ParseMode
@@ -553,15 +556,41 @@ async def initialize():
     global download_semaphore
     download_semaphore = asyncio.Semaphore(PyroConf.MAX_CONCURRENT_DOWNLOADS)
 
-if __name__ == "__main__":
+# --- Render ওয়েব সার্ভিসের জন্য নতুন কোড ---
+
+app = FastAPI()
+
+@app.get("/")
+async def root():
+    """Render health check endpoint"""
+    return {"status": "bot_is_running"}
+
+def run_bot():
+    """বটটি একটি আলাদা থ্রেডে চালানোর জন্য ফাংশন"""
     try:
-        LOGGER(__name__).info("Bot Started!")
-        asyncio.get_event_loop().run_until_complete(initialize())
+        LOGGER(__name__).info("Bot Thread Started!")
+        # Pyrogram-কে একটি নতুন ইভেন্ট লুপ তৈরি করতে দিন
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        loop.run_until_complete(initialize())
         admin_client.start()
         bot.run()
     except KeyboardInterrupt:
         pass
     except Exception as err:
-        LOGGER(__name__).error(err)
+        LOGGER(__name__).error(f"Bot thread error: {err}", exc_info=True)
     finally:
-        LOGGER(__name__).info("Bot Stopped")
+        LOGGER(__name__).info("Bot Thread Stopped")
+
+
+if __name__ == "__main__":
+    # ১. বটটিকে একটি ডেমন থ্রেডে (daemon thread) চালু করুন
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    
+    # ২. ওয়েব সার্ভারটি মূল থ্রেডে চালু করুন (Render-এর জন্য)
+    # Render নিজে থেকে $PORT এনভায়রনমেন্ট ভেরিয়েবল সেট করে দেয়
+    port = int(os.getenv("PORT", 8080))
+    LOGGER(__name__).info(f"Starting web server on 0.0.0.0:{port}...")
+    uvicorn.run(app, host="0.0.0.0", port=port)
