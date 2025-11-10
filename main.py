@@ -556,31 +556,48 @@ async def initialize():
     global download_semaphore
     download_semaphore = asyncio.Semaphore(PyroConf.MAX_CONCURRENT_DOWNLOADS)
 
-# --- Render ওয়েব সার্ভিসের জন্য নতুন কোড ---
+# --- Render ওয়েব সার্ভিসের জন্য আপডেট করা কোড ---
 
 app = FastAPI()
 
-@app.get("/")
-async def root():
-    """Render health check endpoint"""
+@app.get("/", include_in_schema=False)
+async def root_get():
+    """Render health check endpoint for GET"""
     return {"status": "bot_is_running"}
 
+@app.head("/", include_in_schema=False)
+async def root_head():
+    """Render health check endpoint for HEAD"""
+    from fastapi.responses import Response
+    return Response(status_code=200)
+
 def run_bot():
-    """বটটি একটি আলাদা থ্রেডে চালানোর জন্য ফাংশন"""
+    """বটটি একটি আলাদা থ্রেডে চালানোর জন্য ফাং শ"""
     try:
         LOGGER(__name__).info("Bot Thread Started!")
-        # Pyrogram-কে একটি নতুন ইভেন্ট লুপ তৈরি করতে দিন
+        
+        # initialize() চালানোর জন্য একটি লুপ তৈরি করুন
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
         loop.run_until_complete(initialize())
+
+        LOGGER(__name__).info("Starting clients...")
         admin_client.start()
-        bot.run()
-    except KeyboardInterrupt:
-        pass
+        bot.start()
+        LOGGER(__name__).info("Clients started. Bot is idle.")
+        
+        # bot.run() এর বদলে, থ্রেডটিকে জীবিত রাখতে এটি ব্যবহার করুন
+        # এটি 'signal only works in main thread' এররটি সমাধান করবে
+        threading.Event().wait() 
+
     except Exception as err:
         LOGGER(__name__).error(f"Bot thread error: {err}", exc_info=True)
     finally:
+        LOGGER(__name__).info("Stopping clients...")
+        if admin_client.is_initialized:
+            admin_client.stop()
+        if bot.is_initialized:
+            bot.stop()
         LOGGER(__name__).info("Bot Thread Stopped")
 
 
@@ -590,7 +607,6 @@ if __name__ == "__main__":
     bot_thread.start()
     
     # ২. ওয়েব সার্ভারটি মূল থ্রেডে চালু করুন (Render-এর জন্য)
-    # Render নিজে থেকে $PORT এনভায়রনমেন্ট ভেরিয়েবল সেট করে দেয়
     port = int(os.getenv("PORT", 8080))
     LOGGER(__name__).info(f"Starting web server on 0.0.0.0:{port}...")
     uvicorn.run(app, host="0.0.0.0", port=port)
