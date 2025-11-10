@@ -5,3 +5,5 @@ python-dotenv
 psutil
 pillow
 motor
+fastapi
+uvicorn
