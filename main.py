@@ -486,7 +486,7 @@ async def handle_any_message(bot: Client, message: Message):
                 f"**নাম:** {user_data.first_name}\n\n"
                 "এখন আপনি আপনার প্রাইভেট চ্যানেল/গ্রুপ থেকে ডাউনলোড করতে পারবেন।"
             )
-        except (SessionPasswordNeeded, PhoneCodeNeeded):
+        except SessionPasswordNeeded:
             await message.reply("❌ **সেশনটি 2FA (Two-Factor Authentication) প্রটেক্টেড।**\nদয়া করে 2FA ছাড়া একটি সেশন স্ট্রিং দিন।")
         except FloodWait as e:
             await message.reply(f"⏳ অনুগ্রহ করে {e.value} সেকেন্ড পরে আবার চেষ্টা করুন।")
