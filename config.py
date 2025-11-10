@@ -15,10 +15,14 @@ except:
         exit(1)
 
     if (
-        not getenv("SESSION_STRING")
-        or getenv("SESSION_STRING") == "xxxxxxxxxxxxxxxxxxxxxxx"
+        not getenv("ADMIN_SESSION_STRING")
+        or getenv("ADMIN_SESSION_STRING") == "xxxxxxxxxxxxxxxxxxxxxxx"
     ):
-        print("Error: SESSION_STRING must be set with a valid string")
+        print("Error: ADMIN_SESSION_STRING must be set with a valid string")
+        exit(1)
+
+    if not getenv("DATABASE_URI"):
+        print("Error: DATABASE_URI must be set")
         exit(1)
 
 
@@ -27,7 +31,13 @@ class PyroConf(object):
     API_ID = int(getenv("API_ID", "6"))
     API_HASH = getenv("API_HASH", "eb06d4abfb49dc3eeb1aeb98ae0f581e")
     BOT_TOKEN = getenv("BOT_TOKEN")
-    SESSION_STRING = getenv("SESSION_STRING")
+    
+    # SESSION_STRING এর বদলে ADMIN_SESSION_STRING
+    ADMIN_SESSION_STRING = getenv("ADMIN_SESSION_STRING")
+    
+    # নতুন ডেটাবেস ভেরিয়েবল
+    DATABASE_URI = getenv("DATABASE_URI")
+    
     BOT_START_TIME = time()
 
     MAX_CONCURRENT_DOWNLOADS = int(getenv("MAX_CONCURRENT_DOWNLOADS", "3"))
