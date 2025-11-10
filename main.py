@@ -14,7 +14,6 @@ from pyrogram.errors import (
     PeerIdInvalid, 
     BadRequest, 
     SessionPasswordNeeded, 
-    PhoneCodeNeeded, 
     FloodWait,
     UserNotParticipant # --- ধাপ ৩ এ নতুন ইম্পোর্ট ---
 )
