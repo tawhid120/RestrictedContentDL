@@ -6,9 +6,6 @@ import shutil
 import psutil
 import asyncio
 from time import time
-import threading
-from fastapi import FastAPI
-import uvicorn
 
 from pyleaves import Leaves
 from pyrogram.enums import ParseMode
@@ -556,74 +553,15 @@ async def initialize():
     global download_semaphore
     download_semaphore = asyncio.Semaphore(PyroConf.MAX_CONCURRENT_DOWNLOADS)
 
-# --- Render ওয়েব সার্ভিসের জন্য চূড়ান্ত কোড (লুপ ফিক্স) ---
-
-app = FastAPI()
-
-@app.get("/", include_in_schema=False)
-async def root_get():
-    """Render health check endpoint for GET"""
-    return {"status": "bot_is_running"}
-
-@app.head("/", include_in_schema=False)
-async def root_head():
-    """Render health check endpoint for HEAD"""
-    from fastapi.responses import Response
-    return Response(status_code=200)
-
-
-async def main_bot_loop():
-    """বটের প্রধান Async ফাংশন, যা লুপটি সচল রাখে"""
-    try:
-        await initialize()
-        LOGGER(__name__).info("Starting clients...")
-        await admin_client.start()
-        await bot.start()
-        LOGGER(__name__).info("Clients started. Bot is idle.")
-        
-        # এটি লুপটিকে সারাক্ষণ সচল রাখবে এবং মেসেজ হ্যান্ডলার চলতে দেবে
-        await asyncio.Event().wait()
-        
-    finally:
-        LOGGER(__name__).info("Stopping clients...")
-        if admin_client.is_initialized:
-            await admin_client.stop()
-        if bot.is_initialized:
-            await bot.stop()
-        LOGGER(__name__).info("Bot clients stopped.")
-
-def run_bot():
-    """বটটি একটি আলাদা থ্রেডে চালানোর জন্য ফাংশন"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    try:
-        LOGGER(__name__).info("Bot Thread Started!")
-        # main_bot_loop ফাংশনটি চালাই, যা সারাক্ষণ চলবে
-        loop.run_until_complete(main_bot_loop())
-        
-    except (asyncio.CancelledError, KeyboardInterrupt):
-        LOGGER(__name__).info("Bot thread interrupted.")
-    except Exception as err:
-        LOGGER(__name__).error(f"Bot thread error: {err}", exc_info=True)
-    finally:
-        # লুপ বন্ধ করার আগে চলমান কাজগুলো বন্ধ করুন
-        try:
-            loop.run_until_complete(loop.shutdown_asyncgens())
-        except Exception as e:
-            LOGGER(__name__).error(f"Error during loop shutdown_asyncgens: {e}")
-        finally:
-            loop.close()
-            asyncio.set_event_loop(None)
-            LOGGER(__name__).info("Bot thread event loop closed.")
-
-
 if __name__ == "__main__":
-    # ১. বটটিকে একটি ডেমন থ্রেডে (daemon thread) চালু করুন
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    
-    # ২. ওয়েব সার্ভারটি মূল থ্রেডে চালু করুন (Render-এর জন্য)
-    port = int(os.getenv("PORT", 8080))
-    LOGGER(__name__).info(f"Starting web server on 0.0.0.0:{port}...")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    try:
+        LOGGER(__name__).info("Bot Started!")
+        asyncio.get_event_loop().run_until_complete(initialize())
+        admin_client.start()
+        bot.run()
+    except KeyboardInterrupt:
+        pass
+    except Exception as err:
+        LOGGER(__name__).error(err, exc_info=True)
+    finally:
+        LOGGER(__name__).info("Bot Stopped")
