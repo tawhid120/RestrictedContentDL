@@ -13,8 +13,10 @@ from pyrogram import Client, filters
 from pyrogram.errors import (
     PeerIdInvalid, 
     BadRequest, 
-    SessionPasswordNeeded, 
+    SessionPasswordNeeded,
     FloodWait,
+    PhoneCodeInvalid, 
+    PasswordHashInvalid,
     UserNotParticipant # --- ধাপ ৩ এ নতুন ইম্পোর্ট ---
 )
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
@@ -23,6 +25,13 @@ from helpers.utils import (
     processMediaGroup,
     progressArgs,
     send_media
+)
+# (helpers.database ইম্পোর্টের ঠিক পরে এটি যোগ করুন)
+from helpers.login import (
+    start_login_process, 
+    cancel_login_process, 
+    is_user_in_login_process,
+    handle_login_message
 )
 
 import os
