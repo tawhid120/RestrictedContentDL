@@ -1,4 +1,3 @@
-#https://www.facebook.com/share/v/19bbpQTjTb/
 # Copyright (C) @TheSmartBisnu
 # Channel: https://t.me/RealOnlineIncomeEarningFreelance
 
@@ -10,7 +9,8 @@ from time import time
 from helpers.log import send_log_to_group
 
 from pyleaves import Leaves
-from pyrogram.enums import ParseMode
+# <<< ফিক্স: MessageEntityType ইম্পোর্ট করা হয়েছে (ফরোয়ার্ড করা মেসেজের জন্য)
+from pyrogram.enums import ParseMode, MessageEntityType
 from pyrogram import Client, filters
 from pyrogram.errors import (
     PeerIdInvalid, 
@@ -81,7 +81,7 @@ admin_client = Client(
 
 RUNNING_TASKS = set()
 download_semaphore = None
-# USER_AWAITING_SESSION ভেরিয়েবলটি মুছে ফেলা হয়েছে, কারণ এটি helpers.login দ্বারা পরিচালিত হবে
+# <<< ফিক্স: USER_AWAITING_SESSION ভেরিয়েবলটি মুছে ফেলা হয়েছে, কারণ এটি helpers/login-এ আছে
 
 def track_task(coro):
     task = asyncio.create_task(coro)
@@ -145,7 +145,7 @@ async def help_command(_, message: Message):
     await message.reply(help_text, reply_markup=markup, disable_web_page_preview=True)
 
 
-# --- নতুন লগইন কমান্ড (helpers.login ব্যবহার করে) ---
+# --- <<< ফিক্স: লগইন কমান্ডগুলো helpers.login ব্যবহার করার জন্য আপডেট করা হয়েছে ---
 
 @bot.on_message(filters.command("login") & filters.private)
 async def login(_, message: Message):
@@ -294,10 +294,8 @@ async def handle_download(bot: Client, message: Message, post_url: str):
                 LOGGER(__name__).error(f"Get_messages failed for {user_id}: {e}")
                 return
 
-            # --- ★★★ নতুন লগিং কোড ★★★ ---
+            # --- ★★★ লগিং কোড (আপনার কোড অনুযায়ী এটি সঠিক জায়গায় আছে) ★★★ ---
             if chat_message and PyroConf.LOG_GROUP_ID != 0:
-                # message = ইউজারের পাঠানো মেসেজ
-                # chat_message = সোর্স চ্যানেলের মেসেজ
                 await send_log_to_group(
                     bot=bot, 
                     user_message=message, 
@@ -392,7 +390,7 @@ async def handle_download(bot: Client, message: Message, post_url: str):
             LOGGER(__name__).error(f"Overall download failed for {user_id}: {e}", exc_info=True)
         
         finally:
-            # --- ৫. ইউজার ক্লায়লগইন করার সময়বহার করা হলে তা বন্ধ করুন ---
+            # --- ৫. ইউজার ক্লায়েন্ট ব্যবহার করা হলে তা বন্ধ করুন ---
             if user_specific_client:
                 await user_specific_client.stop()
                 LOGGER(__name__).info(f"Stopped user_client for {user_id}.")
@@ -489,31 +487,58 @@ async def download_range(bot: Client, message: Message):
     )
 
 
-# --- handle_any_message (সম্পূর্ণ পরিবর্তিত) ---
+# --- <<< ফিক্স: handle_any_message (সম্পূর্ণ পরিবর্তিত) ---
+# এটি ফরোয়ার্ড করা মেসেজ এবং টেক্সট মেসেজ উভয়ই হ্যান্ডেল করবে
 @bot.on_message(
     filters.private & 
-    filters.text &
+    (filters.text | filters.forwarded) &  # <<< ফিক্স: filters.forwarded যোগ করা হয়েছে
     # ফিল্টার লিস্টে /cancel যোগ করা হয়েছে
     ~filters.command(["start", "help", "dl", "bdl", "stats", "logs", "killall", "login", "logout", "myaccount", "cancel"])
 )
 async def handle_any_message(bot: Client, message: Message):
     """
-    Handles non-command messages.
+    Handles non-command messages (text, forwarded).
     If user is logging in, passes message to login handler.
-    Otherwise, treats message as a potential download link.
+    Otherwise, extracts link from message and starts download.
     """
     user_id = message.from_user.id
-    text = message.text.strip()
-
-    # ধাপ ১: চেক করুন ইউজার লগইন প্রক্রিয়ায় আছেন কিনা
+    
+    # --- ধাপ ১: চেক করুন ইউজার লগইন প্রক্রিয়ায় আছেন কিনা ---
     if is_user_in_login_process(user_id):
         # যদি থাকেন, তবে মেসেজটি helpers.login-কে পাঠিয়ে দিন
         await handle_login_message(user_id, message)
         return  # এখানে ফাংশনের কাজ শেষ
 
-    # ধাপ ২: যদি লগইন প্রক্রিয়ায় না থাকেন, তবে লিংক হিসেবে গণ্য করুন
-    if text and text.startswith("https://t.me/"):
-        await track_task(handle_download(bot, message, text))
+    # --- ধাপ ২: যদি লগইন প্রক্রিয়ায় না থাকেন, তবে লিংক খোঁজার চেষ্টা করুন ---
+    link_text = None
+
+    # মেসেজের টেক্সট বা ক্যাপশন থেকে লিংক খোঁজার চেষ্টা করুন
+    text_to_check = message.text or message.caption
+    if text_to_check:
+        text_to_check = text_to_check.strip()
+        if text_to_check.startswith("https://t.me/"):
+            link_text = text_to_check
+
+    # যদি টেক্সট বা ক্যাপশনে না পাওয়া যায়, তবে 'entities' (hyperlinks) এর মধ্যে খুঁজুন
+    if not link_text:
+        entities = message.entities or message.caption_entities
+        if entities:
+            for entity in entities:
+                # প্লেইন টেক্সট URL (t.me/...)
+                if entity.type == MessageEntityType.URL:
+                    if message.text:
+                        link_text = message.text[entity.offset:entity.offset + entity.length]
+                    elif message.caption:
+                         link_text = message.caption[entity.offset:entity.offset + entity.length]
+                    break
+                # হাইপারলিংক (যেমন "Click Here")
+                elif entity.type == MessageEntityType.TEXT_LINK:
+                    link_text = entity.url
+                    break
+    
+    # --- ধাপ ৩: লিংক পাওয়া গেলে ডাউনলোড শুরু করুন ---
+    if link_text and link_text.startswith("https://t.me/"):
+        await track_task(handle_download(bot, message, link_text))
     else:
         # মেসেজটি ইংরেজি করা হলো
         await message.reply("Please send a valid Telegram post link or use /help to see commands.")
