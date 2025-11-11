@@ -5,7 +5,8 @@ from pyrogram.errors import (
     SessionPasswordNeeded, 
     PhoneCodeInvalid, 
     PasswordHashInvalid,
-    FloodWait
+    FloodWait,
+    PhoneNumberInvalid  # <-- ফিক্স: এটি যোগ করা হয়েছে
 )
 from config import PyroConf
 from logger import LOGGER
@@ -70,8 +71,6 @@ async def handle_login_message(user_id, message):
     temp_client = session_data.get("temp_client")
 
     # --- ফিক্স (Race Condition): Client is already terminated ---
-    # যদি কোনো কারণে ক্লায়েন্টটি আগেই বন্ধ হয়ে গিয়ে থাকে,
-    # তবে এই সেশনটি বাতিল করুন এবং এই মেসেজটিকে ইগনোর করুন।
     if temp_client and not temp_client.is_connected and state != "awaiting_phone":
         LOGGER(__name__).warning(f"Cleaning up stale login session for {user_id} (client terminated)")
         if user_id in LOGIN_SESSIONS:
@@ -82,6 +81,19 @@ async def handle_login_message(user_id, message):
     try:
         # --- ধাপ ১: ফোন নম্বর পাওয়া ---
         if state == "awaiting_phone":
+            
+            # --- ফিক্স: ফোন নম্বরটি '+' দিয়ে শুরু হয়েছে কিনা তা যাচাই করা ---
+            if not text.startswith("+"):
+                await message.reply(
+                    "❌ **Invalid Format!**\n\n"
+                    "Your phone number must start with a `+` and include the country code.\n\n"
+                    "**Example:** `+8801712345678`\n\n"
+                    "The login process has been cancelled. Please send /login to try again."
+                )
+                await cancel_login_process(user_id) # এই প্রচেষ্টা বাতিল করুন
+                return
+            # --- ফিক্স শেষ ---
+
             await message.reply("⏳ Received phone number. Sending confirmation code...")
             
             temp_client = Client(
@@ -184,6 +196,19 @@ async def handle_login_message(user_id, message):
             await temp_client.stop()
         if user_id in LOGIN_SESSIONS:
             del LOGIN_SESSIONS[user_id]
+            
+    # --- ফিক্স: PhoneNumberInvalid এর জন্য সুনির্দিষ্ট এরর মেসেজ ---
+    except PhoneNumberInvalid:
+        await message.reply(
+            "❌ **Invalid Phone Number!**\n\n"
+            "Telegram rejected this number. Please make sure it is a valid Telegram account number and includes the `+` symbol and country code (e.g., `+880...`).\n\n"
+            "The login process has been cancelled. Please send /login to try again."
+        )
+        if temp_client and temp_client.is_connected:
+            await temp_client.stop()
+        if user_id in LOGIN_SESSIONS:
+            del LOGIN_SESSIONS[user_id]
+    # --- ফিক্স শেষ ---
         
     except Exception as e:
         # এটি সেই এররটি যা আপনি আগে পাচ্ছিলেন
@@ -205,3 +230,4 @@ async def handle_login_message(user_id, message):
             except: pass
         if user_id in LOGIN_SESSIONS:
             del LOGIN_SESSIONS[user_id]
+
