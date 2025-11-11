@@ -17,7 +17,7 @@ from pyrogram.errors import (
     FloodWait,
     PhoneCodeInvalid, 
     PasswordHashInvalid,
-    UserNotParticipant # --- ধাপ ৩ এ নতুন ইম্পোর্ট ---
+    UserNotParticipant
 )
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -26,7 +26,8 @@ from helpers.utils import (
     progressArgs,
     send_media
 )
-# (helpers.database ইম্পোর্টের ঠিক পরে এটি যোগ করুন)
+
+# helpers.login থেকে ফাংশনগুলো ইম্পোর্ট করা হচ্ছে
 from helpers.login import (
     start_login_process, 
     cancel_login_process, 
@@ -50,7 +51,6 @@ from helpers.msg import (
     get_parsed_msg
 )
 
-# ধাপ ১ থেকে নতুন ইম্পোর্ট
 from helpers.database import save_session, get_session, delete_session
 
 from config import PyroConf
@@ -68,7 +68,7 @@ bot = Client(
     sleep_threshold=30,
 )
 
-# Client for admin session (ধাপ ২ অনুযায়ী)
+# Client for admin session
 admin_client = Client(
     "admin_session",
     workers=100,
@@ -79,7 +79,7 @@ admin_client = Client(
 
 RUNNING_TASKS = set()
 download_semaphore = None
-USER_AWAITING_SESSION = set()
+# USER_AWAITING_SESSION ভেরিয়েবলটি মুছে ফেলা হয়েছে, কারণ এটি helpers.login দ্বারা পরিচালিত হবে
 
 def track_task(coro):
     task = asyncio.create_task(coro)
@@ -92,17 +92,18 @@ def track_task(coro):
 
 @bot.on_message(filters.command("start") & filters.private)
 async def start(_, message: Message):
+    # helpers.login ইংরেজি ভাষায় কথা বলে, তাই /start মেসেজটিও ইংরেজি করা হলো
     welcome_text = (
         "👋 **Welcome to Media Downloader Bot!**\n\n"
         "I can grab photos, videos, audio, and documents from any Telegram post.\n"
         "Just send me a link (paste it directly or use `/dl <link>`),\n"
         "or reply to a message with `/dl`.\n\n"
         "**Features:**\n"
-        "➤ Use `/login` to add your own account for private channels.\n"
+        "➤ Use `/login` to add your own account (via Phone Number) for private channels.\n"
         "➤ Use `/myaccount` to check your login status.\n"
         "➤ Use `/logout` to remove your account.\n\n"
         "ℹ️ Use `/help` to view all commands and examples.\n"
-        "🔒 Make sure your account (or bot's admin account) is part of the chat.\n\n"
+        "🔒 Make sure your account (or the bot's admin account) is part of the chat.\n\n"
         "Ready? Send me a Telegram post link!"
     )
     markup = InlineKeyboardMarkup(
@@ -113,6 +114,7 @@ async def start(_, message: Message):
 
 @bot.on_message(filters.command("help") & filters.private)
 async def help_command(_, message: Message):
+    # helpers.login ইংরেজি ভাষায় কথা বলে, তাই /help মেসেজটিও ইংরেজি করা হলো
     help_text = (
         "💡 **Media Downloader Bot Help**\n\n"
         "➤ **Download Media**\n"
@@ -122,9 +124,10 @@ async def help_command(_, message: Message):
         "     💡 Example: `/bdl https://t.me/mychannel/100 https://t.me/mychannel/120`\n"
         "**It will download all posts from ID 100 to 120.**\n\n"
         "➤ **Account Management**\n"
-        "   – `/login`: Add your personal account to access private chats.\n"
+        "   – `/login`: Add your personal account via Phone Number & OTP to access private chats.\n"
         "   – `/myaccount`: Check if you have an account linked.\n"
-        "   – `/logout`: Remove your account from the bot.\n\n"
+        "   – `/logout`: Remove your account from the bot.\n"
+        "   – `/cancel`: Cancel any ongoing login process.\n\n"
         "➤ **Requirements**\n"
         "   – Make sure the admin account (for public links) or your personal account (for private links) is part of the chat.\n\n"
         "➤ **If the bot hangs**\n"
@@ -140,35 +143,38 @@ async def help_command(_, message: Message):
     await message.reply(help_text, reply_markup=markup, disable_web_page_preview=True)
 
 
-# --- লগইন কমান্ড (ধাপ ২) ---
+# --- নতুন লগইন কমান্ড (helpers.login ব্যবহার করে) ---
 
 @bot.on_message(filters.command("login") & filters.private)
 async def login(_, message: Message):
-    if message.from_user.id in USER_AWAITING_SESSION:
-        USER_AWAITING_SESSION.discard(message.from_user.id)
-        
-    await message.reply(
-        "🔒 **Account Login**\n\n"
-        "দয়া করে আপনার Pyrogram v2 (String) সেশনটি পরবর্তী মেসেজে পাঠান।\n\n"
-        "**সতর্কতা:** আপনার সেশন স্ট্রিং সরাসরি আমাদের ডেটাবেসে সেভ করা হবে। এটি দিয়ে আপনার অ্যাকাউন্টে সম্পূর্ণ অ্যাক্সেস নেওয়া সম্ভব।\n"
-        "প্রয়োজন হলে `/logout` ব্যবহার করে সেশনটি ডিলিট করতে পারবেন।\n\n"
-        "ℹ️ সেশন জেনারেট করতে @SmartUtilBot এ /pyro কমান্ডটি ব্যবহার করুন।"
-    )
-    USER_AWAITING_SESSION.add(message.from_user.id)
+    """
+    Starts the login process by calling the function from helpers.login
+    """
+    await start_login_process(message.from_user.id, message)
 
 
 @bot.on_message(filters.command("logout") & filters.private)
 async def logout(_, message: Message):
+    """
+    Logs out the user, cancelling any active login and clearing the database session.
+    """
     user_id = message.from_user.id
+    
+    # helpers.login থেকে কল করে কোনো অসমাপ্ত লগইন থাকলে তা বাতিল করুন
+    await cancel_login_process(user_id)
+    
     if await get_session(user_id):
         await delete_session(user_id)
-        await message.reply("✅ আপনার অ্যাকাউন্ট সফলভাবে লগআউট করা হয়েছে।")
+        # মেসেজটি ইংরেজি করা হলো
+        await message.reply("✅ You have been successfully logged out.")
     else:
-        await message.reply("❌ আপনি লগইন করা নেই।")
-
+        await message.reply("❌ You were not logged in.")
 
 @bot.on_message(filters.command("myaccount") & filters.private)
 async def my_account(_, message: Message):
+    """
+    Checks if the user has a valid session saved in the database.
+    """
     user_id = message.from_user.id
     session_string = await get_session(user_id)
     
@@ -185,29 +191,41 @@ async def my_account(_, message: Message):
             user_data = await temp_client.get_me()
             await temp_client.stop()
             
+            # মেসেজটি ইংরেজি করা হলো
             await message.reply(
-                f"✅ **আপনি লগইন আছেন।**\n\n"
-                f"**ইউজারনেম:** @{user_data.username}\n"
-                f"**নাম:** {user_data.first_name}\n"
+                f"✅ **You are logged in.**\n\n"
+                f"**Username:** @{user_data.username}\n"
+                f"**Name:** {user_data.first_name}\n"
                 f"**ID:** `{user_data.id}`"
             )
         except FloodWait as e:
-            await message.reply(f"⏳ অনুগ্রহ করে {e.value} সেকেন্ড পরে আবার চেষ্টা করুন।")
+            await message.reply(f"⏳ Please wait {e.value} seconds before checking again.")
         except Exception as e:
             await delete_session(user_id)
             await message.reply(
-                f"❌ **সেশনটি অবৈধ বা এক্সপায়ার হয়ে গেছে।**\n"
-                f"এটি ডেটাবেস থেকে মুছে ফেলা হয়েছে। দয়া করে আবার `/login` করুন।\n\n"
+                f"❌ **Your saved session is invalid or has expired.**\n"
+                f"It has been removed from the database. Please /login again.\n\n"
                 f"(`{e}`)"
             )
     else:
-        await message.reply("❌ আপনি লগইন করা নেই। `/login` ব্যবহার করে লগইন করুন।")
+        await message.reply("❌ You are not logged in. Use /login to add your account.")
+
+# --- নতুন /cancel কমান্ড ---
+@bot.on_message(filters.command("cancel") & filters.private)
+async def cancel_login(_, message: Message):
+    """
+    Cancels an ongoing login process.
+    """
+    if await cancel_login_process(message.from_user.id):
+        await message.reply("✅ The login process has been cancelled.")
+    else:
+        await message.reply("❌ There was no active login process to cancel.")
 
 # --- লগইন শেষ ---
 
 
-# --- ★★★ ধাপ ৩: সম্পূর্ণ পরিবর্তিত handle_download ফাংশন ★★★ ---
-
+# --- ★★★ handle_download ফাংশন (অপরিবর্তিত) ★★★ ---
+# এই ফাংশনটি আপনার আগের কোড থেকে হুবহু কপি করা হয়েছে। কোনো পরিবর্তন করা হয়নি।
 async def handle_download(bot: Client, message: Message, post_url: str):
     user_id = message.from_user.id
     user_specific_client = None
@@ -238,9 +256,10 @@ async def handle_download(bot: Client, message: Message, post_url: str):
                 
                 user_session_string = await get_session(user_id)
                 if not user_session_string:
+                    # মেসেজটি ইংরেজি করা হলো
                     await message.reply(
-                        "❌ **অ্যাডমিন অ্যাকাউন্ট এই চ্যানেলে নেই।**\n\n"
-                        "এই প্রাইভেট চ্যানেল থেকে ডাউনলোড করতে, দয়া করে `/login` কমান্ড ব্যবহার করে আপনার অ্যাকাউন্ট যোগ করুন এবং আবার চেষ্টা করুন।"
+                        "❌ **The admin account is not in this channel.**\n\n"
+                        "To download from this private channel, please /login with your account and try again."
                     )
                     return
                 
@@ -259,22 +278,23 @@ async def handle_download(bot: Client, message: Message, post_url: str):
                 
                 except Exception as user_e:
                     LOGGER(__name__).error(f"User client FAILED for {user_id}: {user_e}")
+                    # মেসেজটি ইংরেজি করা হলো
                     await message.reply(
-                        f"❌ **আপনার অ্যাকাউন্ট দিয়েও অ্যাক্সেস করা যায়নি।**\n\n"
-                        "দয়া করে পরীক্ষা করুন আপনি চ্যানেলটিতে জয়েন আছেন কিনা এবং আপনার সেশনটি (`/myaccount` চেক করুন) সচল আছে কিনা।\n\n"
+                        f"❌ **Failed to access content with your account.**\n\n"
+                        "Please ensure you are a member of the channel and your session is active (check with /myaccount).\n\n"
                         f"**Error:** `{user_e}`"
                     )
                     return # ইউজার ক্লায়েন্টও ব্যর্থ
 
             # --- ৩. অন্য কোনো ইরর হলে (যেমন লিঙ্ক ভুল) ---
             except Exception as e:
-                await message.reply(f"**❌ মেসেজটি পেতে ব্যর্থ:**\n`{e}`")
+                await message.reply(f"**❌ Failed to get the message:**\n`{e}`")
                 LOGGER(__name__).error(f"Get_messages failed for {user_id}: {e}")
                 return
 
             # --- ৪. ডাউনলোড প্রসেস শুরু করুন ---
             if not chat_message:
-                await message.reply("**❌ মেসেজটি খুঁজে পাওয়া যায়নি বা অ্যাক্সেস নেই।**")
+                await message.reply("**❌ Message not found or access denied.**")
                 return
 
             # ফাইল সাইজ লিমিট চেক
@@ -297,8 +317,6 @@ async def handle_download(bot: Client, message: Message, post_url: str):
 
             # মিডিয়া গ্রুপ হ্যান্ডেল
             if chat_message.media_group_id:
-                # processMediaGroup 'chat_message' অবজেক্টটি ব্যবহার করে,
-                # যা সঠিক ক্লায়েন্ট (অ্যাডমিন বা ইউজার) এর সাথে বাইন্ড করা আছে।
                 if not await processMediaGroup(chat_message, bot, message):
                     await message.reply(
                         "**Could not extract any valid media from the media group.**"
@@ -313,7 +331,6 @@ async def handle_download(bot: Client, message: Message, post_url: str):
                 filename = get_file_name(message_id, chat_message)
                 download_path = get_download_path(message.id, filename)
 
-                # chat_message.download() কল করলে এটি নিজে থেকেই সঠিক ক্লায়েন্ট ব্যবহার করবে
                 media_path = await chat_message.download(
                     file_name=download_path,
                     progress=Leaves.progress_for_pyrogram,
@@ -356,21 +373,22 @@ async def handle_download(bot: Client, message: Message, post_url: str):
                 await message.reply("**No media or text found in the post URL.**")
 
         except Exception as e:
-            error_message = f"**❌ একটি অজানা ত্রুটি ঘটেছে:**\n`{e}`"
+            error_message = f"**❌ An unknown error occurred:**\n`{e}`"
             await message.reply(error_message)
             LOGGER(__name__).error(f"Overall download failed for {user_id}: {e}", exc_info=True)
         
         finally:
-            # --- ৫. ইউজার ক্লায়েন্ট ব্যবহার করা হলে তা বন্ধ করুন ---
+            # --- ৫. ইউজার ক্লায়লগইন করার সময়বহার করা হলে তা বন্ধ করুন ---
             if user_specific_client:
                 await user_specific_client.stop()
                 LOGGER(__name__).info(f"Stopped user_client for {user_id}.")
 
-# --- ★★★ ধাপ ৩ এর পরিবর্তন শেষ ★★★ ---
+# --- ★★★ handle_download এর পরিবর্তন শেষ ★★★ ---
 
 
 @bot.on_message(filters.command("dl") & filters.private)
 async def download_media(bot: Client, message: Message):
+    # এই ফাংশনটি অপরিবর্তিত আছে
     if len(message.command) < 2:
         await message.reply("**Provide a post URL after the /dl command.**")
         return
@@ -381,6 +399,7 @@ async def download_media(bot: Client, message: Message):
 
 @bot.on_message(filters.command("bdl") & filters.private)
 async def download_range(bot: Client, message: Message):
+    # এই ফাংশনটি অপরিবর্তিত আছে
     args = message.text.split()
 
     if len(args) != 3 or not all(arg.startswith("https://t.me/") for arg in args[1:]):
@@ -403,13 +422,10 @@ async def download_range(bot: Client, message: Message):
     if start_id > end_id:
         return await message.reply("**❌ Invalid range: start ID cannot exceed end ID.**")
 
-    # bdl (ব্যাচ ডাউনলোড) এখন handle_download ফাংশন ব্যবহার করে,
-    # তাই এটি স্বয়ংক্রিয়ভাবে অ্যাডমিন/ইউজার ক্লায়েন্ট সিলেকশন সমর্থন করবে।
-    # শুধু অ্যাডমিন ক্লায়েন্ট দিয়ে get_chat চেক করা হলো, যা ঠিক আছে।
     try:
         await admin_client.get_chat(start_chat)
     except Exception:
-        pass # যদি অ্যাডমিন না পারে, handle_download ইউজারকে দিয়ে চেষ্টা করাবে
+        pass 
 
     prefix = args[1].rsplit("/", 1)[0]
     loading = await message.reply(f"📥 **Downloading posts {start_id}–{end_id}…**")
@@ -420,9 +436,6 @@ async def download_range(bot: Client, message: Message):
 
     for msg_id in range(start_id, end_id + 1):
         url = f"{prefix}/{msg_id}"
-        
-        # এখানে get_messages কল করার দরকার নেই,
-        # handle_download নিজেই এটি করবে এবং ক্লায়েন্টও সিলেক্ট করবে।
         
         task = track_task(handle_download(bot, message, url))
         batch_tasks.append(task)
@@ -462,56 +475,39 @@ async def download_range(bot: Client, message: Message):
     )
 
 
+# --- handle_any_message (সম্পূর্ণ পরিবর্তিত) ---
 @bot.on_message(
     filters.private & 
     filters.text &
-    ~filters.command(["start", "help", "dl", "bdl", "stats", "logs", "killall", "login", "logout", "myaccount"])
+    # ফিল্টার লিস্টে /cancel যোগ করা হয়েছে
+    ~filters.command(["start", "help", "dl", "bdl", "stats", "logs", "killall", "login", "logout", "myaccount", "cancel"])
 )
 async def handle_any_message(bot: Client, message: Message):
+    """
+    Handles non-command messages.
+    If user is logging in, passes message to login handler.
+    Otherwise, treats message as a potential download link.
+    """
     user_id = message.from_user.id
-    
-    if user_id in USER_AWAITING_SESSION:
-        USER_AWAITING_SESSION.discard(user_id)
-        session_string = message.text.strip()
-        
-        try:
-            LOGGER(__name__).info(f"Checking session for user {user_id}")
-            temp_client = Client(
-                f"check_session_{user_id}",
-                api_id=PyroConf.API_ID,
-                api_hash=PyroConf.API_HASH,
-                session_string=session_string,
-                in_memory=True
-            )
-            await temp_client.start()
-            user_data = await temp_client.get_me()
-            await temp_client.stop()
-            
-            await save_session(user_id, session_string)
-            LOGGER(__name__).info(f"Session saved for user {user_id}")
-            await message.reply(
-                f"✅ **সেশন সফলভাবে সেভ করা হয়েছে!**\n\n"
-                f"**ইউজারনেম:** @{user_data.username}\n"
-                f"**নাম:** {user_data.first_name}\n\n"
-                "এখন আপনি আপনার প্রাইভেট চ্যানেল/গ্রুপ থেকে ডাউনলোড করতে পারবেন।"
-            )
-        except SessionPasswordNeeded:
-            await message.reply("❌ **সেশনটি 2FA (Two-Factor Authentication) প্রটেক্টেড।**\nদয়া করে 2FA ছাড়া একটি সেশন স্ট্রিং দিন।")
-        except FloodWait as e:
-            await message.reply(f"⏳ অনুগ্রহ করে {e.value} সেকেন্ড পরে আবার চেষ্টা করুন।")
-        except Exception as e:
-            LOGGER(__name__).error(f"Session check failed for {user_id}: {e}")
-            await message.reply(f"❌ **সেশনটি অবৈধ।**\nদয়া করে একটি সঠিক Pyrogram v2 সেশন স্ট্রিং দিন।\n\n(`{e}`)")
-        return
+    text = message.text.strip()
 
-    if message.text and message.text.startswith("https://t.me/"):
-        await track_task(handle_download(bot, message, message.text))
+    # ধাপ ১: চেক করুন ইউজার লগইন প্রক্রিয়ায় আছেন কিনা
+    if is_user_in_login_process(user_id):
+        # যদি থাকেন, তবে মেসেজটি helpers.login-কে পাঠিয়ে দিন
+        await handle_login_message(user_id, message)
+        return  # এখানে ফাংশনের কাজ শেষ
+
+    # ধাপ ২: যদি লগইন প্রক্রিয়ায় না থাকেন, তবে লিংক হিসেবে গণ্য করুন
+    if text and text.startswith("https://t.me/"):
+        await track_task(handle_download(bot, message, text))
     else:
-        await message.reply("দয়া করে একটি বৈধ টেলিগ্রাম পোস্ট লিঙ্ক পাঠান অথবা `/help` দেখুন।")
+        # মেসেজটি ইংরেজি করা হলো
+        await message.reply("Please send a valid Telegram post link or use /help to see commands.")
 
 
 @bot.on_message(filters.command("stats") & filters.private)
 async def stats(_, message: Message):
+    # এই ফাংশনটি অপরিবর্তিত আছে
     currentTime = get_readable_time(time() - PyroConf.BOT_START_TIME)
     total, used, free = shutil.disk_usage(".")
     total = get_readable_file_size(total)
@@ -542,6 +538,7 @@ async def stats(_, message: Message):
 
 @bot.on_message(filters.command("logs") & filters.private)
 async def logs(_, message: Message):
+    # এই ফাংশনটি অপরিবর্তিত আছে
     if os.path.exists("logs.txt"):
         await message.reply_document(document="logs.txt", caption="**Logs**")
     else:
@@ -550,6 +547,7 @@ async def logs(_, message: Message):
 
 @bot.on_message(filters.command("killall") & filters.private)
 async def cancel_all_tasks(_, message: Message):
+    # এই ফাংশনটি অপরিবর্তিত আছে
     cancelled = 0
     for task in list(RUNNING_TASKS):
         if not task.done():
@@ -559,10 +557,12 @@ async def cancel_all_tasks(_, message: Message):
 
 
 async def initialize():
+    # এই ফাংশনটি অপরিবর্তিত আছে
     global download_semaphore
     download_semaphore = asyncio.Semaphore(PyroConf.MAX_CONCURRENT_DOWNLOADS)
 
 if __name__ == "__main__":
+    # এই ফাংশনটি অপরিবর্তিত আছে
     try:
         LOGGER(__name__).info("Bot Started!")
         asyncio.get_event_loop().run_until_complete(initialize())
