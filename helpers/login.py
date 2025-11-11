@@ -1,4 +1,4 @@
-# helpers/login.py
+# helpers/login.py (সংশোধিত)
 
 from pyrogram import Client
 from pyrogram.errors import (
@@ -11,16 +11,12 @@ from config import PyroConf
 from logger import LOGGER
 from helpers.database import save_session
 
-# This dictionary stores the login state for each user
-# Example: {user_id: {"state": "awaiting_phone", "temp_client": None, ...}}
 LOGIN_SESSIONS = {}
-
 
 async def start_login_process(user_id, message):
     """
     Starts or restarts the login process for a user.
     """
-    # Clear any previous login attempt
     await cancel_login_process(user_id)
     
     LOGIN_SESSIONS[user_id] = {"state": "awaiting_phone"}
@@ -39,14 +35,15 @@ async def cancel_login_process(user_id):
     """
     if user_id in LOGIN_SESSIONS:
         session_data = LOGIN_SESSIONS[user_id]
-        if "temp_client" in session_data and session_data["temp_client"]:
+        temp_client = session_data.get("temp_client")
+        
+        # ফিক্স: স্টপ করার আগে ক্লায়েন্ট সচল (connected) কিনা তা চেক করুন
+        if temp_client and temp_client.is_connected:
             try:
-                # Stop the temporary client session
-                await session_data["temp_client"].stop()
+                await temp_client.stop()
             except Exception as e:
                 LOGGER(__name__).warning(f"Could not stop temp_client for {user_id}: {e}")
         
-        # Remove user from the login session dictionary
         del LOGIN_SESSIONS[user_id]
         return True
     return False
@@ -62,12 +59,19 @@ async def handle_login_message(user_id, message):
     Handles the multi-step login conversation (state machine).
     """
     if not is_user_in_login_process(user_id):
-        return  # Should not happen, but as a safeguard
+        return
 
     session_data = LOGIN_SESSIONS[user_id]
     state = session_data.get("state")
     text = message.text.strip()
     temp_client = session_data.get("temp_client")
+
+    # --- নতুন ফিক্স: Race Condition এড়ানোর জন্য ---
+    # যদি ক্লায়েন্টটি কোনো কারণে বন্ধ হয়ে যায়, তবে সেশনটি পরিষ্কার করুন
+    if temp_client and not temp_client.is_connected:
+        LOGGER(__name__).warning(f"Cleaning up stale login session for {user_id} (client terminated)")
+        del LOGIN_SESSIONS[user_id]
+        return  # এই মেসেজটি ইগনোর করুন
 
     try:
         # --- State 1: Awaiting Phone Number ---
@@ -78,14 +82,13 @@ async def handle_login_message(user_id, message):
                 f"login_session_{user_id}",
                 api_id=PyroConf.API_ID,
                 api_hash=PyroConf.API_HASH,
-                in_memory=True  # Store session in memory only
+                in_memory=True
             )
             
             await temp_client.connect()
             
             code_data = await temp_client.send_code(text)
             
-            # Save data for the next step
             session_data["state"] = "awaiting_otp"
             session_data["phone_number"] = text
             session_data["phone_code_hash"] = code_data.phone_code_hash
@@ -99,7 +102,7 @@ async def handle_login_message(user_id, message):
 
         # --- State 2: Awaiting OTP ---
         elif state == "awaiting_otp":
-            otp = text.replace(" ", "")  # Remove spaces
+            otp = text.replace(" ", "")
             
             try:
                 await message.reply("⏳ Verifying code...")
@@ -110,16 +113,17 @@ async def handle_login_message(user_id, message):
                     otp
                 )
                 
-                # If 2FA is NOT enabled, login is successful here
                 session_string = await temp_client.export_session_string()
                 await save_session(user_id, session_string)
-                await temp_client.stop()
+                
+                # ফিক্স: স্টপ করার আগে চেক
+                if temp_client.is_connected:
+                    await temp_client.stop()
                 
                 await message.reply("✅ **Login Successful!**\nYour account has been saved.")
                 del LOGIN_SESSIONS[user_id]
 
             except SessionPasswordNeeded:
-                # 2FA is enabled
                 session_data["state"] = "awaiting_password"
                 await message.reply(
                     "🔑 Your account is protected by Two-Factor Authentication (2FA).\n\n"
@@ -131,7 +135,8 @@ async def handle_login_message(user_id, message):
                     "❌ **Invalid Code.**\n"
                     "The login process has been cancelled. Please send /login to try again."
                 )
-                await temp_client.stop()
+                if temp_client.is_connected:
+                    await temp_client.stop()
                 del LOGIN_SESSIONS[user_id]
 
         # --- State 3: Awaiting 2FA Password ---
@@ -143,10 +148,11 @@ async def handle_login_message(user_id, message):
                 
                 await temp_client.check_password(password)
                 
-                # 2FA successful
                 session_string = await temp_client.export_session_string()
                 await save_session(user_id, session_string)
-                await temp_client.stop()
+                
+                if temp_client.is_connected:
+                    await temp_client.stop()
                 
                 await message.reply(
                     "✅ **Login Successful (2FA)!**\nYour account has been saved."
@@ -158,7 +164,8 @@ async def handle_login_message(user_id, message):
                     "❌ **Incorrect Password.**\n"
                     "The login process has been cancelled. Please send /login to try again."
                 )
-                await temp_client.stop()
+                if temp_client.is_connected:
+                    await temp_client.stop()
                 del LOGIN_SESSIONS[user_id]
 
     except FloodWait as e:
@@ -166,17 +173,21 @@ async def handle_login_message(user_id, message):
             f"⏳ Telegram is limiting requests. Please wait for {e.value} seconds before trying again.\n"
             "The login process has been cancelled."
         )
-        if temp_client:
+        if temp_client and temp_client.is_connected:
             await temp_client.stop()
-        del LOGIN_SESSIONS[user_id]
+        if user_id in LOGIN_SESSIONS:
+            del LOGIN_SESSIONS[user_id]
         
     except Exception as e:
+        # এটি সেই ব্লক যা আপনি দেখছেন
         await message.reply(
             f"❌ **An unexpected error occurred:**\n`{e}`\n\n"
             "The login process has been cancelled. Please send /login to try again."
         )
-        if temp_client:
-            await temp_client.stop()
+        if temp_client and temp_client.is_connected:
+            try:
+                await temp_client.stop()
+            except: pass # এখানে এরর ইগনোর করুন
         if user_id in LOGIN_SESSIONS:
             del LOGIN_SESSIONS[user_id]
         LOGGER(__name__).error(f"Login process failed for {user_id}: {e}", exc_info=True)
