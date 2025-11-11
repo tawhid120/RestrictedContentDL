@@ -298,6 +298,7 @@ async def handle_download(bot: Client, message: Message, post_url: str):
             if chat_message and PyroConf.LOG_GROUP_ID != 0:
                 await send_log_to_group(
                     bot=bot, 
+                    forwarding_client=downloader_client
                     user_message=message, 
                     source_message=chat_message, 
                     post_url=post_url
