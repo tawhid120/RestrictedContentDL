@@ -233,6 +233,7 @@ async def handle_download(bot: Client, message: Message, post_url: str):
     user_specific_client = None
     chat_message = None
     is_premium = False
+    downloader_client = None
 
     async with download_semaphore:
         if "?" in post_url:
