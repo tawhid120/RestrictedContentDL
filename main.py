@@ -1,5 +1,5 @@
 # Copyright (C) @TheSmartBisnu
-# Channel: https://t.me/itsSmartDev
+# Channel: https://t.me/RealOnlineIncomeEarningFreelance
 
 import os
 import shutil
@@ -107,7 +107,7 @@ async def start(_, message: Message):
         "Ready? Send me a Telegram post link!"
     )
     markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("Update Channel", url="https://t.me/itsSmartDev")]]
+        [[InlineKeyboardButton("Update Channel", url="https://t.me/RealOnlineIncomeEarningFreelance")]]
     )
     await message.reply(welcome_text, reply_markup=markup, disable_web_page_preview=True)
 
@@ -138,7 +138,7 @@ async def help_command(_, message: Message):
         "   – Send `/stats` to view current status."
     )
     markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("Update Channel", url="https://t.me/itsSmartDev")]]
+        [[InlineKeyboardButton("Update Channel", url="https://t.me/RealOnlineIncomeEarningFreelance")]]
     )
     await message.reply(help_text, reply_markup=markup, disable_web_page_preview=True)
 
