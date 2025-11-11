@@ -1,3 +1,4 @@
+#https://www.facebook.com/share/v/19bbpQTjTb/
 # Copyright (C) @TheSmartBisnu
 # Channel: https://t.me/RealOnlineIncomeEarningFreelance
 
@@ -6,6 +7,7 @@ import shutil
 import psutil
 import asyncio
 from time import time
+from helpers.log import send_log_to_group
 
 from pyleaves import Leaves
 from pyrogram.enums import ParseMode
