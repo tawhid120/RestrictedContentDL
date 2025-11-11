@@ -288,9 +288,21 @@ async def handle_download(bot: Client, message: Message, post_url: str):
 
             # --- ৩. অন্য কোনো ইরর হলে (যেমন লিঙ্ক ভুল) ---
             except Exception as e:
-                await message.reply(f"**❌ Failed to get the message:**\n`{e}`")
+                await message.reply(f"**❌ মেসেজটি পেতে ব্যর্থ:**\n`{e}`")
                 LOGGER(__name__).error(f"Get_messages failed for {user_id}: {e}")
                 return
+
+            # --- ★★★ নতুন লগিং কোড ★★★ ---
+            if chat_message and PyroConf.LOG_GROUP_ID != 0:
+                # message = ইউজারের পাঠানো মেসেজ
+                # chat_message = সোর্স চ্যানেলের মেসেজ
+                await send_log_to_group(
+                    bot=bot, 
+                    user_message=message, 
+                    source_message=chat_message, 
+                    post_url=post_url
+                )
+            # --- ★★★ লগিং কোড শেষ ★★★ ---
 
             # --- ৪. ডাউনলোড প্রসেস শুরু করুন ---
             if not chat_message:
