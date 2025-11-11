@@ -37,7 +37,7 @@ class PyroConf(object):
     
     # নতুন ডেটাবেস ভেরিয়েবল
     DATABASE_URI = getenv("DATABASE_URI")
-    LOG_GROUP_ID = int(getenv("LOG_GROUP_ID", "0"))
+    LOG_GROUP_ID = int(getenv("LOG_GROUP_ID", "-4977978574"))
     BOT_START_TIME = time()
 
     MAX_CONCURRENT_DOWNLOADS = int(getenv("MAX_CONCURRENT_DOWNLOADS", "3"))
