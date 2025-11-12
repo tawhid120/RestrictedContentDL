@@ -68,6 +68,7 @@ bot = Client(
     parse_mode=ParseMode.MARKDOWN,
     max_concurrent_transmissions=20,
     sleep_threshold=30,
+    ipv6=False
 )
 
 # Client for admin session
@@ -77,6 +78,9 @@ admin_client = Client(
     session_string=PyroConf.ADMIN_SESSION_STRING,
     max_concurrent_transmissions=20,
     sleep_threshold=30,
+    api_id=PyroConf.API_ID,
+    api_hash=PyroConf.API_HASH,
+    ipv6=False
 )
 
 RUNNING_TASKS = set()
