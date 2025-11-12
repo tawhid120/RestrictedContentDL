@@ -1,4 +1,4 @@
-# helpers/login.py (চূড়ান্ত এবং ত্রুটি-মুক্ত সংস্করণ)
+# helpers/login.py
 
 from pyrogram import Client
 from pyrogram.errors import (
@@ -6,7 +6,7 @@ from pyrogram.errors import (
     PhoneCodeInvalid, 
     PasswordHashInvalid,
     FloodWait,
-    PhoneNumberInvalid  # <-- ফিক্স: এটি যোগ করা হয়েছে
+    PhoneNumberInvalid
 )
 from config import PyroConf
 from logger import LOGGER
@@ -231,4 +231,3 @@ async def handle_login_message(user_id, message):
             except: pass
         if user_id in LOGIN_SESSIONS:
             del LOGIN_SESSIONS[user_id]
-
