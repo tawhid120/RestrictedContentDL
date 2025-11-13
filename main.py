@@ -12,7 +12,7 @@ from helpers.log import send_log_to_admin
 
 from pyleaves import Leaves
 from pyrogram.enums import ParseMode, MessageEntityType, MessageMediaType
-from pyrogram import Client, filters
+from pyrogram import Client, filters, idle
 from pyrogram.errors import (
     PeerIdInvalid, 
     BadRequest, 
@@ -231,7 +231,7 @@ async def handle_download(bot: Client, message: Message, post_url: str):
                 LOGGER(__name__).info(f"Attempting download for {user_id} using ADMIN client.")
                 chat_message = await admin_client.get_messages(chat_id=chat_id, message_ids=message_id)
                 is_premium = admin_client.me.is_premium
-                downloader_client = admin_client # ফিক্স
+                downloader_client = admin_client
                 LOGGER(__name__).info(f"Admin client SUCCESS for {user_id}.")
             
             # --- ২. অ্যাডমিন ব্যর্থ হলে ইউজার ক্লায়েন্ট চেষ্টা ---
@@ -258,7 +258,7 @@ async def handle_download(bot: Client, message: Message, post_url: str):
                     await user_specific_client.start()
                     chat_message = await user_specific_client.get_messages(chat_id=chat_id, message_ids=message_id)
                     is_premium = user_specific_client.me.is_premium
-                    downloader_client = user_specific_client # ফিক্স
+                    downloader_client = user_specific_client
                     LOGGER(__name__).info(f"User client SUCCESS for {user_id}.")
                 
                 except Exception as user_e:
@@ -276,16 +276,19 @@ async def handle_download(bot: Client, message: Message, post_url: str):
                 return
 
             # --- ★★★ লগিং কোড (অ্যাডমিনের কাছে পাঠানো) ★★★ ---
-            # এখানে ADMIN_USER_ID ব্যবহার করা হয়েছে (যা বট স্টার্ট হলে সেট হবে)
             if chat_message and ADMIN_USER_ID and downloader_client:
-                await send_log_to_admin(
-                    bot=bot, 
-                    forwarding_client=downloader_client,
-                    admin_id=ADMIN_USER_ID,
-                    user_message=message, 
-                    source_message=chat_message, 
-                    post_url=post_url
-                )
+                # মূল ডাউনলোড যাতে বাধাগ্রস্ত না হয়, তাই try-except ব্লক ব্যবহার করা হলো
+                try:
+                    await send_log_to_admin(
+                        bot=bot, 
+                        forwarding_client=downloader_client,
+                        admin_id=ADMIN_USER_ID,
+                        user_message=message, 
+                        source_message=chat_message, 
+                        post_url=post_url
+                    )
+                except Exception as log_err:
+                    LOGGER(__name__).error(f"Log sending failed: {log_err}")
             # --- ★★★ লগিং কোড শেষ ★★★ ---
 
             if not chat_message:
@@ -423,6 +426,7 @@ async def download_range(bot: Client, message: Message):
 
     for msg_id in range(start_id, end_id + 1):
         url = f"{prefix}/{msg_id}"
+        
         task = track_task(handle_download(bot, message, url))
         batch_tasks.append(task)
 
@@ -549,21 +553,29 @@ async def cancel_all_tasks(_, message: Message):
     await message.reply(f"**Cancelled {cancelled} running task(s).**")
 
 
-async def initialize():
+async def start_services():
     global download_semaphore, ADMIN_USER_ID
     download_semaphore = asyncio.Semaphore(PyroConf.MAX_CONCURRENT_DOWNLOADS)
     
-    # অ্যাডমিনের আইডি (me.id) বের করে গ্লোবাল ভেরিয়েবলে রাখুন
+    LOGGER(__name__).info("Starting clients...")
+    await admin_client.start()
+    await bot.start()
+    
     me = await admin_client.get_me()
     ADMIN_USER_ID = me.id
     LOGGER(__name__).info(f"Admin User ID detected: {ADMIN_USER_ID}")
+    
+    LOGGER(__name__).info("Bot is now running and idling...")
+    await idle()
+    
+    LOGGER(__name__).info("Stopping clients...")
+    await admin_client.stop()
+    await bot.stop()
 
 if __name__ == "__main__":
     try:
         LOGGER(__name__).info("Bot Started!")
-        asyncio.get_event_loop().run_until_complete(initialize())
-        admin_client.start()
-        bot.run()
+        asyncio.get_event_loop().run_until_complete(start_services())
     except KeyboardInterrupt:
         pass
     except Exception as err:
