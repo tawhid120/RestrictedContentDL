@@ -1,28 +1,27 @@
-# helpers/log.py (সংশোধিত)
+# helpers/log.py (অ্যাডমিনের ইনবক্সে লগ পাঠানোর জন্য আপডেট করা হয়েছে)
 
 from pyrogram import Client
 from pyrogram.types import Message
-from pyrogram.errors import FloodWait, UserIsBlocked, ChatAdminRequired, PeerIdInvalid
-from config import PyroConf
+from pyrogram.errors import FloodWait
 from logger import LOGGER
 import asyncio
 
-async def send_log_to_group(bot: Client, forwarding_client: Client, user_message: Message, source_message: Message, post_url: str):
+async def send_log_to_admin(bot: Client, forwarding_client: Client, admin_id: int, user_message: Message, source_message: Message, post_url: str):
     """
-    বটকে পাঠানো কন্টেন্ট এবং ইউজারের তথ্য লগ গ্রুপে ফরোয়ার্ড করে।
+    বটকে পাঠানো কন্টেন্ট এবং ইউজারের তথ্য সরাসরি অ্যাডমিনের ইনবক্সে ফরোয়ার্ড করে।
     """
-    if PyroConf.LOG_GROUP_ID == 0:
+    if not admin_id:
         return
 
     try:
-        # --- ধাপ ১: কন্টেন্ট ফরোয়ার্ড করা ---
-        # ফিক্স: forwarding_client (admin/user) এখন ফরোয়ার্ড করছে
+        # --- ধাপ ১: কন্টেন্ট ফরোয়ার্ড করা (সরাসরি অ্যাডমিনের কাছে) ---
         await forwarding_client.forward_messages(
-            chat_id=PyroConf.LOG_GROUP_ID,
+            chat_id=admin_id,
             from_chat_id=source_message.chat.id,
             message_ids=source_message.id
         )
 
+        # একটু অপেক্ষা করুন যাতে মেসেজগুলো ক্রমানুসারে আসে
         await asyncio.sleep(1) 
 
         # --- ধাপ ২: বিস্তারিত তথ্য পাঠানো ---
@@ -48,17 +47,15 @@ async def send_log_to_group(bot: Client, forwarding_client: Client, user_message
             f"**Original Link:** `{post_url}`"
         )
         
-        # ফিক্স: bot ক্লায়েন্ট এখন শুধু টেক্সট পাঠাচ্ছে
+        # অ্যাডমিনকে টেক্সট মেসেজ পাঠানো
         await bot.send_message(
-            chat_id=PyroConf.LOG_GROUP_ID,
+            chat_id=admin_id,
             text=log_message_text,
             disable_web_page_preview=True
         )
 
     except FloodWait as e:
-        LOGGER(__name__).warning(f"FloodWait in log group: waiting {e.value} seconds")
+        LOGGER(__name__).warning(f"FloodWait in admin log: waiting {e.value} seconds")
         await asyncio.sleep(e.value)
-    except (UserIsBlocked, ChatAdminRequired, PeerIdInvalid):
-        LOGGER(__name__).error(f"Bot was kicked/banned from the LOG_GROUP (ID: {PyroConf.LOG_GROUP_ID}). Disabling logging.")
     except Exception as e:
-        LOGGER(__name__).error(f"Failed to send log to group (ID: {PyroConf.LOG_GROUP_ID}): {e}", exc_info=True)
+        LOGGER(__name__).error(f"Failed to send log to admin: {e}", exc_info=True)
